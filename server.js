@@ -34,13 +34,13 @@ const variantId = {
     "prod": "0198e568-f04f-7dfa-b5fa-a2a4ab217d32"
 }
 
-app.post("/upload", upload.single("file"), async (req, res) => {
+app.post("/upload", upload.fields([{ name: 'file', maxCount: 1 }, { name: 'bundle_file', maxCount: 1 }]), async (req, res) => {
     try {
-        if (!req.file) {
+        if (!req.files || !req.files.file || !req.files.file[0]) {
             return res.status(400).json({ error: "No file uploaded" });
         }
 
-        if (!req.bundle_file) {
+        if (!req.files.bundle_file || !req.files.bundle_file[0]) {
             return res.status(400).json({ error: "No bundle file uploaded" });
         }
 
@@ -56,10 +56,10 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             return res.status(400).json({ error: "No env informed" });
         }
 
-        const fileBuffer = fs.readFileSync(req.file.path);
+        const fileBuffer = fs.readFileSync(req.files.file[0].path);
         const base64Bundle = fileBuffer.toString("base64");
 
-        const bundleFileBuffer = fs.readFileSync(req.bundle_file.path);
+        const bundleFileBuffer = fs.readFileSync(req.files.bundle_file[0].path);
         const checksumBundleFile = crypto.createHash('sha256').update(bundleFileBuffer).digest('hex');
 
         let appId = 1; // homepage 1, portfolio 2
@@ -101,8 +101,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             }
         );
 
-        fs.unlinkSync(req.file.path);
-        fs.unlinkSync(req.bundle_file.path);
+        fs.unlinkSync(req.files.file[0].path);
+        fs.unlinkSync(req.files.bundle_file[0].path);
 
         res.json({
             success: true,
@@ -110,12 +110,12 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             data: response.data,
         });
     } catch (error) {
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
+        if (req.files && req.files.file && req.files.file[0] && fs.existsSync(req.files.file[0].path)) {
+            fs.unlinkSync(req.files.file[0].path);
         }
 
-        if (req.bundle_file && fs.existsSync(req.bundle_file.path)) {
-            fs.unlinkSync(req.bundle_file.path);
+        if (req.files && req.files.bundle_file && req.files.bundle_file[0] && fs.existsSync(req.files.bundle_file[0].path)) {
+            fs.unlinkSync(req.files.bundle_file[0].path);
         }
 
         console.log("error", error);
