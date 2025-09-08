@@ -41,7 +41,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         }
 
         if (!req.bundle_file) {
-            return res.status(400).json({ error: "No file uploaded" });
+            return res.status(400).json({ error: "No bundle file uploaded" });
         }
 
         if (!req.body.app) {
@@ -102,6 +102,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         );
 
         fs.unlinkSync(req.file.path);
+        fs.unlinkSync(req.bundle_file.path);
 
         res.json({
             success: true,
@@ -111,6 +112,10 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     } catch (error) {
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
+        }
+
+        if (req.bundle_file && fs.existsSync(req.bundle_file.path)) {
+            fs.unlinkSync(req.bundle_file.path);
         }
 
         console.log("error", error);
