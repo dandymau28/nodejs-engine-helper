@@ -40,6 +40,10 @@ app.post("/upload", upload.single("file"), async (req, res) => {
             return res.status(400).json({ error: "No file uploaded" });
         }
 
+        if (!req.bundle_file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+
         if (!req.body.app) {
             return res.status(400).json({ error: "No app informed" });
         }
@@ -55,7 +59,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         const fileBuffer = fs.readFileSync(req.file.path);
         const base64Bundle = fileBuffer.toString("base64");
 
-        const sha256Hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+        const bundleFileBuffer = fs.readFileSync(req.bundle_file.path);
+        const checksumBundleFile = crypto.createHash('sha256').update(bundleFileBuffer).digest('hex');
 
         let appId = 1; // homepage 1, portfolio 2
         let device = "1"; //iOS 1, android 2
@@ -92,7 +97,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
                 device: device,
                 variant_id: env,
                 bundle: base64Bundle,
-                bundle_source_checksum: sha256Hash
+                bundle_source_checksum: checksumBundleFile
             }
         );
 
