@@ -263,6 +263,86 @@ app.post("/generate-checksum", upload.single("file"), async (req, res) => {
     }
 });
 
+app.post("/verify-signature", async (req, res) => {
+    try {
+        const { signature_given, pem, signature_items, private_pem } = req.body;
+
+        if (!signature_given) {
+            return res.status(400).json({ error: "signature_given is required" });
+        }
+
+        if (!pem) {
+            return res.status(400).json({ error: "pem is required" });
+        }
+
+        if (!private_pem) {
+            return res.status(400).json({ error: "private pem is required" });
+        }
+
+        if (!signature_items) {
+            return res.status(400).json({ error: "signature_items is required" });
+        }
+
+        let dataToSign;
+        if (typeof signature_items === 'string') {
+            dataToSign = signature_items;
+        } else if (typeof signature_items === 'object') {
+            dataToSign = JSON.stringify(signature_items);
+        } else {
+            return res.status(400).json({ error: "signature_items must be a string or object" });
+        }
+
+        const verify = crypto.createVerify('SHA256');
+        verify.update(dataToSign);
+        verify.end();
+
+        const publicKeyFormatted = `-----BEGIN PUBLIC KEY-----\n${pem}\n-----END PUBLIC KEY-----`;
+        const signatureBuffer = Buffer.from(signature_given, 'base64');
+
+        const isValid = verify.verify(publicKeyFormatted, signatureBuffer);
+
+        let responseData = {
+            isValid: isValid,
+            signature_matched: isValid
+        };
+
+        if (!isValid) {
+            try {
+                const sign = crypto.createSign('SHA256');
+                sign.update(dataToSign);
+                sign.end();
+
+                const privateKeyDecoded = Buffer.from(private_pem, 'base64').toString('utf8');
+                const validSignature = sign.sign(privateKeyDecoded, 'base64');
+                
+                responseData.valid_signature = validSignature;
+                responseData.message = "Signature invalid, providing correct signature";
+            } catch (signError) {
+                responseData.message = "Signature invalid, cannot generate valid signature with provided private PEM";
+            }
+        }
+
+        res.json({
+            success: true,
+            message: "Signature verification completed",
+            data: responseData
+        });
+
+    } catch (error) {
+        console.log("Signature verification error", error);
+
+        res.status(500).json({
+            success: false,
+            error: "Failed to verify signature",
+            details: error.message,
+            data: {
+                isValid: false,
+                signature_matched: false
+            }
+        });
+    }
+});
+
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
