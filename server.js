@@ -1,10 +1,13 @@
+
+
+require('dotenv').config();
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
 const fs = require("fs");
 const mysql = require("mysql2/promise");
 const crypto = require("crypto");
-const { Storage } = require("@google-cloud/storage");
+const Minio = require('minio');
 
 const app = express();
 const port = 3000;
@@ -13,12 +16,22 @@ app.use(express.json());
 
 const upload = multer({ dest: "uploads/" });
 
-const storage = new Storage({
-    keyFilename: process.env.GOOGLE_CLOUD_KEY_FILE || './gcs-credentials.json',
-    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'your-project-id'
+const minioCredentials = {
+    "host": process.env.MINIO_HOST,
+    "access_id": process.env.MINIO_ACCESS_ID,
+    "secret_key": process.env.MINIO_SECRET_KEY ,
+    "use_ssl": process.env.MINIO_USE_SSL === 'false' ? false : true,
+    "bucket": process.env.MINIO_BUCKET
+  }
+
+const minioClient = new Minio.Client({
+    endPoint: minioCredentials.host,
+    useSSL: minioCredentials.use_ssl,
+    accessKey: minioCredentials.access_id,
+    secretKey: minioCredentials.secret_key
 });
 
-const bucketName = process.env.GCS_BUCKET_NAME || 'your-bucket-name';
+const bucketName = minioCredentials.bucket;
 
 const dbConfig = {
     host: 'localhost',
@@ -137,21 +150,16 @@ app.post("/upload-gcs", upload.single("file"), async (req, res) => {
             return res.status(400).json({ error: "Filename is required" });
         }
 
-        const bucket = storage.bucket(bucketName);
         const fileName = req.body.filename;
-        const file = bucket.file(fileName);
-
         const fileBuffer = fs.readFileSync(req.file.path);
 
-        await file.save(fileBuffer, {
-            metadata: {
-                contentType: req.file.mimetype,
-            },
+        await minioClient.putObject(bucketName, fileName, fileBuffer, fileBuffer.length, {
+            'Content-Type': req.file.mimetype
         });
 
         fs.unlinkSync(req.file.path);
 
-        const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
+        const publicUrl = `https://${minioCredentials.host}/${bucketName}/${fileName}`;
 
         res.json({
             success: true,
@@ -346,3 +354,4 @@ app.post("/verify-signature", async (req, res) => {
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
+
