@@ -34,10 +34,10 @@ const minioClient = new Minio.Client({
 const bucketName = minioCredentials.bucket;
 
 const dbConfig = {
-    host: '172.18.139.190',
-    user: 'briopr',
-    password: 'Tanyapakkholis',
-    database: 'ibank'
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME
 };
 
 const variantId = {
