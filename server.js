@@ -37,7 +37,10 @@ const dbConfig = {
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME
+    database: process.env.DB_NAME,
+    acquireTimeout: 60000,
+    timeout: 60000,
+    reconnect: true
 };
 
 const variantId = {
@@ -351,6 +354,50 @@ app.post("/verify-signature", async (req, res) => {
     }
 });
 
+const registerUserWithRetry = async (sqlStatements, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        let connection;
+        try {
+            connection = await mysql.createConnection(dbConfig);
+            await connection.beginTransaction();
+
+            const queries = [
+                { name: 'profile', ...sqlStatements.profile },
+                { name: 'user', ...sqlStatements.user },
+                { name: 'account', ...sqlStatements.account },
+                { name: 'alias', ...sqlStatements.alias },
+                { name: 'pin', ...sqlStatements.pin }
+            ];
+
+            for (const queryObj of queries) {
+                await connection.execute(queryObj.query, queryObj.values);
+            }
+
+            await connection.commit();
+            await connection.end();
+            return { success: true };
+
+        } catch (error) {
+            if (connection) {
+                try {
+                    await connection.rollback();
+                    await connection.end();
+                } catch (rollbackError) {
+                    console.error('Error during rollback:', rollbackError);
+                }
+            }
+
+            if (error.code === 'ER_LOCK_WAIT_TIMEOUT' && attempt < maxRetries) {
+                console.log(`Lock timeout on attempt ${attempt}, retrying...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                continue;
+            }
+
+            throw error;
+        }
+    }
+};
+
 app.post("/register-user", async (req, res) => {
     try {
         const {
@@ -410,18 +457,7 @@ app.post("/register-user", async (req, res) => {
         };
 
         try {
-            const connection = await mysql.createConnection(dbConfig);
-
-            await connection.beginTransaction();
-
-            await connection.execute(sqlStatements.profile.query, sqlStatements.profile.values);
-            await connection.execute(sqlStatements.user.query, sqlStatements.user.values);
-            await connection.execute(sqlStatements.account.query, sqlStatements.account.values);
-            await connection.execute(sqlStatements.alias.query, sqlStatements.alias.values);
-            await connection.execute(sqlStatements.pin.query, sqlStatements.pin.values);
-
-            await connection.commit();
-            await connection.end();
+            await registerUserWithRetry(sqlStatements);
 
             res.json({
                 success: true,
@@ -450,6 +486,18 @@ app.post("/register-user", async (req, res) => {
                         user_alias: user_alias,
                         sql_statements: sqlStatements
                     }
+                });
+            } else if (dbError.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                res.status(409).json({
+                    success: false,
+                    error: "Database lock timeout after multiple retries. Please try again later.",
+                    details: "System is currently busy processing other transactions."
+                });
+            } else if (dbError.code === 'ER_DUP_ENTRY') {
+                res.status(409).json({
+                    success: false,
+                    error: "User already exists",
+                    details: "Username, CIF, or user alias already registered."
                 });
             } else {
                 throw dbError;
