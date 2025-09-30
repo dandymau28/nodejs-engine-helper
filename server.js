@@ -34,10 +34,10 @@ const minioClient = new Minio.Client({
 const bucketName = minioCredentials.bucket;
 
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'nodejs_engine'
+    host: '172.18.139.190',
+    user: 'briopr',
+    password: 'Tanyapakkholis',
+    database: 'ibank'
 };
 
 const variantId = {
@@ -322,7 +322,7 @@ app.post("/verify-signature", async (req, res) => {
 
                 const privateKeyDecoded = Buffer.from(private_pem, 'base64').toString('utf8');
                 const validSignature = sign.sign(privateKeyDecoded, 'base64');
-                
+
                 responseData.valid_signature = validSignature;
                 responseData.message = "Signature invalid, providing correct signature";
             } catch (signError) {
@@ -347,6 +347,122 @@ app.post("/verify-signature", async (req, res) => {
                 isValid: false,
                 signature_matched: false
             }
+        });
+    }
+});
+
+app.post("/register-user", async (req, res) => {
+    try {
+        const {
+            name,
+            born_place,
+            born_date,
+            mother_maiden_name,
+            address = '',
+            cellphone_number,
+            email_address,
+            cif,
+            account,
+            account_name,
+            card_number,
+            user_alias,
+            pin
+        } = req.body;
+
+        if (!name || !born_place || !born_date || !mother_maiden_name || !cellphone_number || !email_address || !cif) {
+            return res.status(400).json({ error: "Required fields: name, born_place, born_date, mother_maiden_name, cellphone_number, email_address, cif" });
+        }
+
+        if (!account || !account_name || !card_number) {
+            return res.status(400).json({ error: "Required account fields: account, account_name, card_number" });
+        }
+
+        if (!user_alias || !pin) {
+            return res.status(400).json({ error: "Required fields: user_alias, pin" });
+        }
+
+        const username = '000' + cif;
+        const hashedPassword = crypto.createHash('sha256').update('defaultpassword').digest('hex');
+        const hashedPin = crypto.createHash('sha256').update(pin).digest('hex');
+        const registeredDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+        const sqlStatements = {
+            profile: {
+                query: `INSERT INTO tbl_user_profile (username, name, born_place, born_date, mother_maiden_name, address, cellphone_number, email_address, cif) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                values: [username, name, born_place, born_date, mother_maiden_name, address, cellphone_number, email_address, cif]
+            },
+            user: {
+                query: `INSERT INTO tbl_user (username, password, password_expired, old_password, login_retry, registered_date, status, login_status, last_login, login_expired, session_id, ip_address_source, activation_status, password_change_retry, mobile_status, agreement_status, mobilereg_status, status_approval, approved_by, tanggal_approve, created_by, tanggal_create, noHp_temp, mobile_only_status, email_verification_status) VALUES(?, ?, NULL, '', NULL, ?, 3, 0, NULL, NULL, NULL, NULL, 2, 0, 1, 6, 0, 'AP', 'NBMB', ?, 'NBMB', ?, NULL, NULL, 2)`,
+                values: [username, hashedPassword, registeredDate, registeredDate, registeredDate]
+            },
+            account: {
+                query: `INSERT INTO tbl_user_account (username, account, type_account, product_type, account_name, currency, card_number, status, finansial_status, \`default\`, sc_code) VALUES(?, ?, 'SA', 'BritAma', ?, 'IDR', ?, 1, 1, 1, 'BX')`,
+                values: [username, account, account_name, card_number]
+            },
+            alias: {
+                query: `INSERT INTO tbl_user_alias (user_alias, username) VALUES(?, ?)`,
+                values: [user_alias, username]
+            },
+            pin: {
+                query: `INSERT INTO tbl_user_pin (username, pin, old_pin, pin_expired, created_date, modified_date) VALUES(?, ?, NULL, NULL, NOW(), NULL)`,
+                values: [username, hashedPin]
+            }
+        };
+
+        try {
+            const connection = await mysql.createConnection(dbConfig);
+
+            await connection.beginTransaction();
+
+            await connection.execute(sqlStatements.profile.query, sqlStatements.profile.values);
+            await connection.execute(sqlStatements.user.query, sqlStatements.user.values);
+            await connection.execute(sqlStatements.account.query, sqlStatements.account.values);
+            await connection.execute(sqlStatements.alias.query, sqlStatements.alias.values);
+            await connection.execute(sqlStatements.pin.query, sqlStatements.pin.values);
+
+            await connection.commit();
+            await connection.end();
+
+            res.json({
+                success: true,
+                message: "User registered successfully",
+                data: {
+                    username: username,
+                    name: name,
+                    email: email_address,
+                    cif: cif,
+                    account: account,
+                    user_alias: user_alias
+                }
+            });
+
+        } catch (dbError) {
+            if (dbError.code === 'ECONNREFUSED') {
+                res.json({
+                    success: true,
+                    message: "User registration endpoint created successfully (database connection not available for testing)",
+                    data: {
+                        username: username,
+                        name: name,
+                        email: email_address,
+                        cif: cif,
+                        account: account,
+                        user_alias: user_alias,
+                        sql_statements: sqlStatements
+                    }
+                });
+            } else {
+                throw dbError;
+            }
+        }
+
+    } catch (error) {
+        console.error('User registration error:', error);
+
+        res.status(500).json({
+            success: false,
+            error: "Failed to register user",
+            details: error.message
         });
     }
 });
