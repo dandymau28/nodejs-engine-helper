@@ -87,6 +87,11 @@ app.post("/upload", upload.fields([{ name: 'file', maxCount: 1 }, { name: 'bundl
             appId = 2; // portfolio
         }
 
+        if (req.body.app.toLowerCase() == "briguna") {
+            console.log("BRIGuna app selected");
+            appId = 3; // portfolio
+        }
+
         if (req.body.device.toLowerCase() == "android") {
             console.log("Android device selected");
             device = "2"; // android
